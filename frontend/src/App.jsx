@@ -102,7 +102,7 @@ function App() {
   useEffect(() => {
     const fetchPredictions = async () => {
       try {
-        const response = await fetch("http://localhost:5000/api/predict", {
+        const response = await fetch("https://college-predictor-a9po.onrender.com/api/predict", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ marks })
