@@ -25,7 +25,7 @@ let isMongoConnected = false;
 let cachedCutoffRecords = [];
 let cutoffDataSource = "fallback";
 
-const mongoUri = process.env.MONGODB_URI ;
+const mongoUri = process.env.MONGODB_URI || "mongodb://localhost:27017/bitsat_predictor";
 
 const campusOrder = ["Pilani", "Goa", "Hyderabad"];
 const categoryFactors = {
@@ -371,9 +371,31 @@ async function getCutoffData() {
 
 mongoose
   .connect(mongoUri)
-  .then(() => {
+  .then(async () => {
     console.log("Connected to MongoDB successfully.");
     isMongoConnected = true;
+
+    // Auto-ingest cutoff data on startup
+    try {
+      const existingCount = await Cutoff.countDocuments({});
+      if (existingCount === 0) {
+        console.log("No cutoff data found. Attempting to ingest from PDF or fallback data...");
+        const pdfRecords = await loadCutoffPdfFromBackendFolder();
+        const recordsToIngest = pdfRecords && pdfRecords.length > 0 ? pdfRecords : cutoffsData;
+        await Cutoff.insertMany(recordsToIngest);
+        cachedCutoffRecords = recordsToIngest;
+        cutoffDataSource = pdfRecords && pdfRecords.length > 0 ? "backend_pdf" : "fallback_seeded";
+        console.log(`Ingested ${recordsToIngest.length} cutoff records from ${cutoffDataSource}`);
+      } else {
+        cachedCutoffRecords = await Cutoff.find({}).lean();
+        cutoffDataSource = "database";
+        console.log(`Found ${existingCount} existing cutoff records in database.`);
+      }
+    } catch (ingestErr) {
+      console.warn("Failed to auto-ingest cutoff data:", ingestErr.message);
+      cachedCutoffRecords = cutoffsData;
+      cutoffDataSource = "fallback";
+    }
   })
   .catch((err) => {
     console.warn("MongoDB connection failed. Backend will automatically fall back to local dataset.", err.message);
@@ -414,6 +436,68 @@ app.get("/api/cutoffs", async (req, res) => {
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", databaseConnected: isMongoConnected });
+});
+
+app.post("/api/ingest-cutoffs", async (req, res) => {
+  try {
+    if (!isMongoConnected) {
+      return res.status(503).json({ message: "MongoDB is not connected. Cannot ingest cutoffs." });
+    }
+
+    // Try to load from PDF first
+    const pdfRecords = await loadCutoffPdfFromBackendFolder();
+    const recordsToIngest = pdfRecords && pdfRecords.length > 0 ? pdfRecords : cutoffsData;
+
+    // Clear existing data and insert new records
+    await Cutoff.deleteMany({});
+    const inserted = await Cutoff.insertMany(recordsToIngest);
+
+    cachedCutoffRecords = recordsToIngest;
+    cutoffDataSource = pdfRecords && pdfRecords.length > 0 ? "backend_pdf" : "fallback_seeded";
+
+    res.json({
+      message: "Cutoff data ingested successfully",
+      recordsIngested: inserted.length,
+      source: cutoffDataSource,
+    });
+  } catch (error) {
+    console.error("Error ingesting cutoffs:", error);
+    res.status(500).json({ message: "Error ingesting cutoff data" });
+  }
+});
+
+app.post("/api/ingest-cutoffs-upload", upload.single("pdf"), async (req, res) => {
+  try {
+    if (!isMongoConnected) {
+      return res.status(503).json({ message: "MongoDB is not connected." });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: "No PDF file provided." });
+    }
+
+    const parsedPdf = await pdfParse(req.file.buffer);
+    const parsedRecords = parseCutoffPdfText(parsedPdf.text);
+
+    if (!parsedRecords.length) {
+      return res.status(400).json({ message: "No cutoff data found in PDF." });
+    }
+
+    await Cutoff.deleteMany({});
+    const inserted = await Cutoff.insertMany(parsedRecords);
+
+    cachedCutoffRecords = parsedRecords;
+    cutoffDataSource = `uploaded_pdf:${req.file.originalname}`;
+
+    res.json({
+      message: "Cutoff PDF ingested successfully",
+      recordsIngested: inserted.length,
+      source: cutoffDataSource,
+    });
+  } catch (error) {
+    console.error("Error ingesting uploaded PDF:", error);
+    res.status(500).json({ message: "Error processing PDF" });
+  }
 });
 
 app.listen(PORT, () => {

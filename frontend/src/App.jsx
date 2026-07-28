@@ -8,8 +8,6 @@ function App() {
     name: "",
     email: "",
     marks: "",
-    college: "BITS Pilani",
-    programme: "B.E. Computer Science",
   });
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -33,18 +31,15 @@ function App() {
           name: formData.name,
           email: formData.email,
           marks: Number(formData.marks),
-          college: formData.college,
-          programme: formData.programme,
         }),
       });
 
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || "Prediction failed");
 
-      const topMatch = data.predictions?.[0] || null;
       setResult({
         student: { ...formData, marks: Number(formData.marks) },
-        prediction: topMatch,
+        predictions: data.predictions || [],
         dataSource: data.dataSource,
       });
       setStep("result");
@@ -83,36 +78,6 @@ function App() {
               <input id="marks" name="marks" type="number" min="0" max="390" value={formData.marks} onChange={handleInputChange} className="marks-input" required />
             </div>
 
-            <div className="form-group">
-              <label className="form-label" htmlFor="college">Targeted College</label>
-              <select id="college" name="college" value={formData.college} onChange={handleInputChange} className="marks-input">
-                <option value="BITS Pilani">BITS Pilani</option>
-                <option value="BITS Goa">BITS Goa</option>
-                <option value="BITS Hyderabad">BITS Hyderabad</option>
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="programme">Targeted Programme</label>
-              <select id="programme" name="programme" value={formData.programme} onChange={handleInputChange} className="marks-input">
-                <option value="B.E. Computer Science">B.E. Computer Science</option>
-                <option value="B.E. Electronics & Communication">B.E. Electronics & Communication</option>
-                <option value="B.E. Electrical & Electronics">B.E. Electrical & Electronics</option>
-                <option value="B.E. Mechanical">B.E. Mechanical</option>
-                <option value="B.E. Chemical">B.E. Chemical</option>
-                <option value="B.E. Civil">B.E. Civil</option>
-                <option value="B.E. Electronics & Instrumentation">B.E. Electronics & Instrumentation</option>
-                <option value="B.E. Manufacturing">B.E. Manufacturing</option>
-                <option value="B. Pharm">B. Pharm</option>
-                <option value="M.Sc. Biological Sciences">M.Sc. Biological Sciences</option>
-                <option value="M.Sc. Chemistry">M.Sc. Chemistry</option>
-                <option value="M.Sc. Economics">M.Sc. Economics</option>
-                <option value="M.Sc. Mathematics">M.Sc. Mathematics</option>
-                <option value="M.Sc. Physics">M.Sc. Physics</option>
-                <option value="Mathematics & Computing">Mathematics & Computing</option>
-              </select>
-            </div>
-
             {error && <p className="error-text">{error}</p>}
 
             <button type="submit" className="submit-btn" disabled={loading}>
@@ -123,31 +88,34 @@ function App() {
       ) : (
         <div className="glass-panel result-panel">
           <button className="back-btn" onClick={() => setStep("form")}>← Back to Form</button>
-          <h2>Prediction Result</h2>
+          <h2>Prediction Results</h2>
           <p className="result-intro">
-            {result?.student?.name || "Student"}, based on your BITSAT score of {result?.student?.marks || 0}, your predicted result is:
+            {result?.student?.name || "Student"}, based on your BITSAT score of <strong>{result?.student?.marks || 0}</strong>, here are your predicted colleges and programmes:
           </p>
 
-          {result?.prediction ? (
-            <>
-              <div className="result-card">
-                <h3>{result.prediction.campus} • {result.prediction.branchName}</h3>
-                <p className="result-subtitle">{result.prediction.degreeType}</p>
-                <div className="probability-pill">{result.prediction.prediction?.percentage || 0}% Probability</div>
-                <p className="result-status">Status: {result.prediction.prediction?.status || "Unavailable"}</p>
-                <p className="result-status">
-                  Target match: {result.prediction.prediction?.targetMatch?.college ? "College matched" : "College not matched"} • {result.prediction.prediction?.targetMatch?.programme ? "Programme matched" : "Programme not matched"}
-                </p>
-              </div>
-              <div className="result-meta">
-                <p><strong>Source:</strong> {result.dataSource}</p>
-                <p><strong>Targeted College:</strong> {result.student.college}</p>
-                <p><strong>Targeted Programme:</strong> {result.student.programme}</p>
-              </div>
-            </>
+          {result?.predictions && result.predictions.length > 0 ? (
+            <div className="predictions-list">
+              {result.predictions.map((pred, idx) => (
+                <div key={idx} className="result-card">
+                  <div className="result-header">
+                    <h3>{pred.campus} • {pred.branchName}</h3>
+                    <div className="probability-pill">{pred.prediction?.percentage || 0}%</div>
+                  </div>
+                  <p className="result-subtitle">{pred.degreeType}</p>
+                  <p className="result-status">Status: <strong>{pred.prediction?.status || "Unavailable"}</strong></p>
+                  {pred.prediction?.latestCutoff && (
+                    <p className="result-status">Cutoff: {pred.prediction.latestCutoff}</p>
+                  )}
+                </div>
+              ))}
+            </div>
           ) : (
-            <p className="error-text">No prediction available yet.</p>
+            <p className="error-text">No predictions available.</p>
           )}
+          
+          <div className="result-meta">
+            <p><strong>Data Source:</strong> {result?.dataSource}</p>
+          </div>
         </div>
       )}
     </div>

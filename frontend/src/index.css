@@ -519,3 +519,43 @@ body {
   margin-bottom: 1.5rem;
   font-size: 0.9rem;
 }
+
+/* Predictions List Styles */
+.predictions-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1.5rem;
+  max-height: 600px;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+  margin-bottom: 2rem;
+}
+
+.predictions-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.predictions-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.predictions-list::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.4);
+  border-radius: 4px;
+}
+
+.predictions-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.6);
+}
+
+.result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.result-header h3 {
+  flex: 1;
+}
