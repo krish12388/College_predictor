@@ -8,6 +8,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { Cutoff } from "./models/cutoff.model.js";
+import { Submission } from "./models/submission.model.js";
 import { cutoffsData } from "./data/cutoffsData.js";
 
 dotenv.config();
@@ -404,7 +405,7 @@ mongoose
 
 app.post("/api/predict", async (req, res) => {
   try {
-    const { name, marks, category, college, programme } = req.body;
+    const { name, email, marks, category, college, programme } = req.body;
 
     if (marks === undefined || marks === null || Number.isNaN(Number(marks))) {
       return res.status(400).json({ message: "Valid marks are required." });
@@ -414,10 +415,42 @@ app.post("/api/predict", async (req, res) => {
     const cutoffsList = await getCutoffData();
     const predictions = buildPredictionRecords(cutoffsList, score, category, college, programme);
 
+    // Save student submission to database if MongoDB is connected
+    let submissionId = null;
+    if (isMongoConnected && name && email) {
+      try {
+        const topPredictions = predictions.slice(0, 10).map((pred) => ({
+          campus: pred.campus,
+          branchName: pred.branchName,
+          branchCode: pred.branchCode,
+          degreeType: pred.degreeType,
+          percentage: pred.prediction?.percentage || 0,
+          status: pred.prediction?.status || "Unavailable",
+          latestCutoff: pred.prediction?.latestCutoff || null,
+        }));
+
+        const submission = new Submission({
+          name,
+          email,
+          marks: score,
+          category: normalizeCategory(category),
+          predictions: topPredictions,
+        });
+
+        const savedSubmission = await submission.save();
+        submissionId = savedSubmission._id;
+        console.log(`Saved submission from ${email} with ID: ${submissionId}`);
+      } catch (saveErr) {
+        console.warn("Failed to save student submission:", saveErr.message);
+        // Continue anyway - don't fail the prediction if saving fails
+      }
+    }
+
     res.json({
       userInput: { name: name || "Student", marks: score, category: normalizeCategory(category) },
       dataSource: cutoffDataSource,
       predictions,
+      submissionId: submissionId ? submissionId.toString() : null,
     });
   } catch (error) {
     console.error("Error in prediction server route:", error);
@@ -436,6 +469,63 @@ app.get("/api/cutoffs", async (req, res) => {
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", databaseConnected: isMongoConnected });
+});
+
+app.get("/api/submissions", async (req, res) => {
+  try {
+    if (!isMongoConnected) {
+      return res.status(503).json({ message: "MongoDB is not connected." });
+    }
+
+    const submissions = await Submission.find({}).sort({ createdAt: -1 }).limit(100).lean();
+    res.json({
+      count: submissions.length,
+      submissions,
+    });
+  } catch (error) {
+    console.error("Error fetching submissions:", error);
+    res.status(500).json({ message: "Error fetching submissions" });
+  }
+});
+
+app.get("/api/submissions/:id", async (req, res) => {
+  try {
+    if (!isMongoConnected) {
+      return res.status(503).json({ message: "MongoDB is not connected." });
+    }
+
+    const { id } = req.params;
+    const submission = await Submission.findById(id);
+
+    if (!submission) {
+      return res.status(404).json({ message: "Submission not found" });
+    }
+
+    res.json(submission);
+  } catch (error) {
+    console.error("Error fetching submission:", error);
+    res.status(500).json({ message: "Error fetching submission" });
+  }
+});
+
+app.get("/api/submissions-by-email/:email", async (req, res) => {
+  try {
+    if (!isMongoConnected) {
+      return res.status(503).json({ message: "MongoDB is not connected." });
+    }
+
+    const { email } = req.params;
+    const submissions = await Submission.find({ email }).sort({ createdAt: -1 }).lean();
+
+    res.json({
+      email,
+      count: submissions.length,
+      submissions,
+    });
+  } catch (error) {
+    console.error("Error fetching submissions by email:", error);
+    res.status(500).json({ message: "Error fetching submissions" });
+  }
 });
 
 app.post("/api/ingest-cutoffs", async (req, res) => {
